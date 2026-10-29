@@ -1,31 +1,45 @@
-import type { gmail_v1 } from "googleapis";
 import { saveInvoiceEmail } from "./insert.js";
+import { gmail } from "./gmail-client.js";
 
-export const monitorInvoices = async (gmail: gmail_v1.Gmail) => {
-  const response = await gmail.users.messages.list({
-    userId: "me",
-    maxResults: 5,
-    labelIds: ["INBOX"],
-    q: "is:unread canva",
-  });
+const INVOICE_QUERY =
+  'newer_than:2d {invoice receipt billing "payment receipt" "payment confirmation" "order confirmation" "tax invoice" statement purchase transaction}';
 
-  const messages = response.data.messages ?? [];
+async function fetchInvoiceIds(): Promise<Set<string>> {
+  const ids = new Set<string>();
+  let pageToken: string | undefined;
 
-  if (messages.length === 0) {
-    console.log("No emails found in your inbox");
-    return;
-  }
+  do {
+    const response = await gmail.users.messages.list({
+      userId: "me",
+      q: INVOICE_QUERY,
+      ...(pageToken ? { pageToken } : {}),
+    });
+
+    for (const msg of response.data.messages ?? []) {
+      if (msg.id) ids.add(msg.id);
+    }
+
+    pageToken = response.data.nextPageToken ?? undefined;
+  } while (pageToken);
+
+  return ids;
+}
+
+export const monitorInvoices = async (messageIds: string[]) => {
+  if (messageIds.length === 0) return;
+
+  const invoiceIds = await fetchInvoiceIds();
+  const invoiceMessageIds = messageIds.filter((id) => invoiceIds.has(id));
 
   let saved = 0;
+  const skipped = messageIds.length - invoiceMessageIds.length;
   let failed = 0;
 
-  for (const message of messages) {
-    if (!message.id) continue;
-
+  for (const messageId of invoiceMessageIds) {
     try {
       const result = await gmail.users.messages.get({
         userId: "me",
-        id: message.id,
+        id: messageId,
         format: "metadata",
         metadataHeaders: ["From", "Subject", "Date"],
       });
@@ -55,13 +69,14 @@ export const monitorInvoices = async (gmail: gmail_v1.Gmail) => {
       saved++;
     } catch (error) {
       failed++;
-      console.error(`Failed to process message ${message.id}:`, error);
+      console.error(`Failed to process message ${messageId}:`, error);
     }
   }
 
   console.log({
-    matched: messages.length,
+    matched: messageIds.length,
     processed: saved,
+    skipped,
     failed,
   });
 };
