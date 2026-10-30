@@ -1,5 +1,7 @@
 import { saveInvoiceEmail } from "./insert.js";
 import { gmail } from "./gmail-client.js";
+import { readEmail } from "./read-email.js";
+import { extractInvoice } from "./invoice-agent.js";
 
 const INVOICE_QUERY =
   'newer_than:2d {invoice receipt billing "payment receipt" "payment confirmation" "order confirmation" "tax invoice" statement purchase transaction}';
@@ -37,35 +39,34 @@ export const monitorInvoices = async (messageIds: string[]) => {
 
   for (const messageId of invoiceMessageIds) {
     try {
-      const result = await gmail.users.messages.get({
-        userId: "me",
-        id: messageId,
-        format: "metadata",
-        metadataHeaders: ["From", "Subject", "Date"],
+      const email = await readEmail(messageId);
+
+      const invoice = await extractInvoice({
+        sender: email.sender,
+        subject: email.subject,
+        emailBody: email.emailBody,
+        attachments: email.attachments,
       });
 
-      const headers = result.data.payload?.headers ?? [];
-
-      const getHeader = (name: string) =>
-        headers.find(
-          (header) => header.name?.toLowerCase() === name.toLowerCase(),
-        )?.value ?? "";
-
-      const gmailMessageId = result.data.id;
-
-      if (!gmailMessageId) {
-        throw new Error("Gmail message id is missing");
+      if (!invoice.is_invoice) {
+        console.log(`Skipping non-invoice email: ${messageId}`);
+        continue;
       }
 
-      const email = {
-        gmailMessageId,
-        sender: getHeader("From"),
-        subject: getHeader("Subject"),
-        date: getHeader("Date"),
-        snippet: result.data.snippet ?? "",
-      };
+      if (invoice.total_amount === null) {
+        throw new Error(`Invoice total could not be extracted: ${messageId}`);
+      }
 
-      await saveInvoiceEmail(email);
+      await saveInvoiceEmail({
+        gmailMessageId: email.messageId,
+        sender: email.sender,
+        subject: email.subject,
+        emailDate: email.date,
+        vendorName: invoice.vendor_name,
+        invoiceNumber: invoice.invoice_number,
+        totalAmount: invoice.total_amount,
+        currency: invoice.currency,
+      });
       saved++;
     } catch (error) {
       failed++;

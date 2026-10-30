@@ -1,22 +1,39 @@
 import { pool } from "./db.js";
 
-export async function saveInvoiceEmail(email: {
+type InvoiceEmailInput = {
   gmailMessageId: string;
   sender: string;
   subject: string;
-  date: string;
-  snippet: string;
-}) {
-  const emailDate = email.date ? new Date(email.date) : null;
+  emailDate: string;
+  vendorName: string | null;
+  invoiceNumber: string | null;
+  totalAmount: number;
+  currency: string | null;
+};
 
+export async function saveInvoiceEmail(email: InvoiceEmailInput) {
   await pool.query(
-    `INSERT INTO invoice_emails (gmail_message_id, sender, subject, date, snippet) VALUES ($1, $2, $3, $4, $5) ON CONFLICT (gmail_message_id) DO NOTHING`,
+    `INSERT INTO invoice_emails (
+      gmail_message_id,
+      sender,
+      subject,
+      email_date,
+      vendor_name,
+      invoice_number,
+      total_amount,
+      currency
+    )
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+    ON CONFLICT (gmail_message_id) DO NOTHING`,
     [
       email.gmailMessageId,
       email.sender,
       email.subject,
-      emailDate && !Number.isNaN(emailDate.getTime()) ? emailDate : null,
-      email.snippet,
+      email.emailDate ? new Date(email.emailDate) : null,
+      email.vendorName,
+      email.invoiceNumber,
+      email.totalAmount,
+      email.currency,
     ],
   );
 }
