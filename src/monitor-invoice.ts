@@ -2,6 +2,7 @@ import { saveInvoiceEmail } from "./insert.js";
 import { gmail } from "./gmail-client.js";
 import { readEmail } from "./read-email.js";
 import { extractInvoice } from "./invoice-agent.js";
+import { pool } from "./db.js";
 
 const INVOICE_QUERY =
   'newer_than:2d {invoice receipt billing "payment receipt" "payment confirmation" "order confirmation" "tax invoice" statement purchase transaction}';
@@ -39,6 +40,15 @@ export const monitorInvoices = async (messageIds: string[]) => {
 
   for (const messageId of invoiceMessageIds) {
     try {
+      const exists = await pool.query(
+        `SELECT 1 FROM invoice_emails WHERE gmail_message_id = $1`,
+        [messageId],
+      );
+
+      if (exists.rows.length > 0) {
+        console.log(`Already processed, skipping: ${messageId}`);
+        continue;
+      }
       const email = await readEmail(messageId);
 
       const invoice = await extractInvoice({
