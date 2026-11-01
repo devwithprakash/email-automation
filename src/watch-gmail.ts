@@ -1,7 +1,7 @@
 import { pool } from "./db.js";
 import { gmail } from "./gmail-client.js";
 
-const topicName = "projects/gmail-automation-512915/topics/gmail-notifications";
+const topicName = process.env.TOPIC_NAME as string
 
 async function startGmailWatch() {
   const response = await gmail.users.watch({
